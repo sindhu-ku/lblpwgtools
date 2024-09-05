@@ -112,6 +112,8 @@ namespace ana
 
     for(const std::string& name: names){
       ret.push_back(Registry<ISyst>::ShortNameToPtr(name, true));
+      //ret.push_back(Registry<ISyst<caf::SRInteractionProxy>>::ShortNameToPtr(name, true));
+      //ret.push_back(Registry<ISyst<caf::SRTrueInteractionProxy>>::ShortNameToPtr(name, true));
       if(!ret.back()){
         std::cout << "FitMultiverse::LoadFrom(): couldn't find any syst with short name '" << name << "'" << std::endl;
         abort();
@@ -214,6 +216,15 @@ namespace ana
     gFitMultiverses.emplace_back(new FitMultiverse(name, latexName, univs, kRandomGas));
     return *gFitMultiverses.back();
   }
+
+  // TO DO: a member that creates a new multiverse from a vector of multiverses 
+  // care has to be put in making sure they are compatible
+  //----------------------------------------------------------------------  
+  //  const FitMultiverse& FitMultiverse::MergeMultiverse( std::vector<Multiverse> multiverses ){ 
+  //      
+  //    GetUniverse 
+  //  
+  //  }
 
   //----------------------------------------------------------------------
   void FitMultiverse::SaveTo(TDirectory* dir, const std::string& name) const

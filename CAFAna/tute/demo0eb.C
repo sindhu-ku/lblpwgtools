@@ -12,6 +12,7 @@
 #include "CAFAna/Core/Cut.h"
 #include "CAFAna/Core/HistAxis.h"
 #include "CAFAna/Core/ISyst.h"
+#include "CAFAna/Core/Utilities.h"
 
 #include "TFile.h"
 #include "TCanvas.h"
@@ -78,6 +79,26 @@ using namespace ana;
   }
   const MuonRwgtSyst kMuonRwgtSyst(0.10, "MuonRwgtSyst", "Muon weight Scale Syst" );
 
+///// Lets try a systematic that can affect both true and reco:: i.e. MEC flat scale
+//class MECScaleSyst : public ISyst<caf::SRTrueInteractionProxy>
+//{
+//public: 
+//  MECScaleSyst(double scale, const std::string shortName, const std::string latexName)
+//    : ISyst(shortName, latexName), fScale(scale) {}
+//
+//    void Shift( double sigma, caf::SRTrueInteractionProxy* ixn, double& weight) const override;
+//
+//  private:
+//  double fScale;
+//};
+//void MECScaleSyst::Shift(double sigma, caf::SRTrueInteractionProxy* ixn, double& weight) const
+//{
+//  if (ixn->mode == ScatteringMode::kMEC)
+//    weight = 1 + sigma * fScale;
+//  else 
+//    weight=1;
+//}
+//const MECScaleSyst kMECScaleSyst(0.10, "MECScaleSyst", "MEC scale systematic");
 // Var that takes energy of the most energetic muon in interaction
 const Var kEnergyInteractionMu([](const caf::SRInteractionProxy* ixn)
   { 
@@ -150,6 +171,14 @@ const Var kEnergyInteractionButMu([](const caf::SRInteractionProxy* ixn)
                         return (nMuons==1);
                       });
 
+ const RecoPartVar kRecoParticleEnergy = SIMPLEPARTVAR(E);
+ // Select particles that have a pdg of muon 
+  const RecoPartCut kIsMuon([](const caf::SRRecoParticleProxy* sr)
+                      {
+                        return abs(sr->pdg) == 13 ;
+                      });
+
+
 // Make a basic ensemble spectrum?
 // based on https://github.com/SBNSoftware/sbnana/blob/feature/ext_cafanacore/sbnana/CAFAna/test/test_ensemble.C 
 void demo0eb()
@@ -160,6 +189,7 @@ void demo0eb()
   systs.push_back(&kEnergyScaleMu);
   systs.push_back(&kMuonRwgtSyst);
   //systs.push_back(&kDummyRwgtSyst);
+ 
 
   // Two methods of generatig multiverse
   // 100 Random values grom a gaussian distribution
@@ -168,9 +198,13 @@ void demo0eb()
   // scans from -n to n sigma shifts, we'll do only the 1 sigma
   const Multiverse& cross = Multiverse::Hypercross(systs,1);
 
+
+
   std::cout << gas.LatexName() << std::endl << gas.ShortName() << std::endl;
   std::cout << cross.LatexName() << std::endl << cross.ShortName() << std::endl;
 
+  std::cout << "gas has "<< gas.NUniv() << "universes from NUniv()\n";
+ std::cout << "cross has "<< cross.NUniv() << "universes from NUniv()\n";
   // we can save our multiverses to file
   TFile fout("test_multiverse.root", "RECREATE");
   gas.SaveTo(&fout, "gas");
@@ -205,13 +239,16 @@ void demo0eb()
   const HistAxis axEnergy("Interaction energy (GeV)", binsEnergy, kEnergyInteractionAll);
   const HistAxis axNoMuEnergy("non-muon energy (GeV)", binsEnergy,kEnergyInteractionButMu);
 
+  const RecoPartHistAxis axRecoPartEnergy("Reco Particle Energy", binsEnergy, kRecoParticleEnergy);
+
   //std::vector<Weight> weis;
   //weis.reserve(101);
   //weis.push_back(kUnweighted); // nominal
   // TO DO: generate multiverse weights
   //for(int i = 0; i < 99; ++i) weis.push_back(GetUniverseWeight("multisim_Genie", i));
 
-  const std::string fname = "/pnfs/dune/persistent/users/mkramer/productions/MiniRun4.5_1E19_RHC/CAF_beta3/CAF/0000000/MiniRun4.5_1E19_RHC.caf.0000*";
+  const std::string fname =  "/exp/dune/data/users/noeroy/mywork/MiniRun5_Fixed_truth/MiniRun5_1E19_RHC.caf/CAF.flat/0000000/*.flat.root";
+
   // Source of events
   SpectrumLoader loader(fname);
   // This is another key line // dont know what is the 2nd [cut] applied to...
@@ -221,33 +258,51 @@ void demo0eb()
   // or whatever multiverse object, in this case randomly generated gaussian shifts
   EnsembleSpectrum sMuonEnsembleGauss(loader.Interactions(RecoType::kDLP).Ensemble(gas)[kHas1RecoMuon],    axMuEnergy);
   EnsembleSpectrum sMuonEnsembleX(loader.Interactions(RecoType::kDLP).Ensemble(cross)[kHas1RecoMuon], axMuEnergy);
-  // The same but for a different variable 
+  // Another way to access the same information from the reco particles branch 
+  EnsembleSpectrum sMuonEnsemblePartX(loader.Interactions(RecoType::kDLP).Ensemble(cross)[kHas1RecoMuon].RecoParticles(RecoType::kDLP)[kIsMuon], axRecoPartEnergy);
+  // Doing the same for other particles to verify our systematic is working as expected
+  EnsembleSpectrum sOtherEnsemblePartX(loader.Interactions(RecoType::kDLP).Ensemble(cross)[kHas1RecoMuon].RecoParticles(RecoType::kDLP)[!kIsMuon], axRecoPartEnergy);
+ 
+
+  // The same but for a different variable  
   EnsembleSpectrum sAllEnsembleX(loader.Interactions(RecoType::kDLP).Ensemble(cross)[kHas1RecoMuon], axEnergy);
   EnsembleSpectrum sNoMuEnsembleX(loader.Interactions(RecoType::kDLP).Ensemble(cross)[kHas1RecoMuon], axNoMuEnergy);
 
+
+  //  some true distributions of MEC things
+  //EnsembleSpectrum sAllMECEnsemble(loader.NuTruths().Ensemble(crossMEC)[kIsMEC], axTrueEnergy);
+  //EnsembleSpectrum sAllnonMECEnsemble(loader.NuTruths().Ensemble(crossMEC)[!kIsMEC], axTrueEnergy);
+ 
   loader.Go();
 
   const double pot = sMuonEnsembleGauss.POT();// 3.5 * 1.47e21 * 40/1.13;
 
 
   //----------- save to file
-  TFile fout2("multiverse_ensemble_spec.root", "RECREATE");
+  TFile fout2("multiverse_ensemble_test.root", "RECREATE");
   sMuonEnsembleGauss.SaveTo(&fout2, "sMuonEnsembleGauss");
   sMuonEnsembleX.SaveTo(&fout2, "sMuonEnsembleX");
   fout2.Close();
 
 
   //----------- Display things in canvases for the gaussian random multiverse
+  // exercise load from file as well
+
+  TFile fin2("multiverse_ensemble_test.root");
+  EnsembleSpectrum sMuonEnsembleGaussFile= *EnsembleSpectrum::LoadFrom(&fin2, "sMuonEnsembleGauss");
+  EnsembleSpectrum sMuonEnsembleXFile= *EnsembleSpectrum::LoadFrom(&fin2, "sMuonEnsembleX");
+
+
   new TCanvas;
-  TH1 * hsMuonEnsembleGauss =  sMuonEnsembleGauss.Nominal().ToTH1(pot, kRed);
+  TH1 * hsMuonEnsembleGauss =  sMuonEnsembleGaussFile.Nominal().ToTH1(pot, kRed);
   hsMuonEnsembleGauss->Draw("hist");
 
   // a vector to store ratios to nominal
   std::vector<TH1*> hratios;
-  for(unsigned int i = 0; i < sMuonEnsembleGauss.NUniverses(); ++i){
-    hratios.push_back(sMuonEnsembleGauss.Universe(i).ToTH1(pot, kRed-10));
+  for(unsigned int i = 0; i < sMuonEnsembleGaussFile.NUniverses(); ++i){
+    hratios.push_back(sMuonEnsembleGaussFile.Universe(i).ToTH1(pot, kRed-10));
 
-    sMuonEnsembleGauss.Universe(i).ToTH1(pot, kRed-10)->Draw("hist same");    
+    sMuonEnsembleGaussFile.Universe(i).ToTH1(pot, kRed-10)->Draw("hist same");    
     
     hratios.back()->Divide(hsMuonEnsembleGauss);
   }  
@@ -257,72 +312,86 @@ void demo0eb()
   hratios[0]->SetMinimum(.6);
   hratios[0]->SetMaximum(1.4);
   new TCanvas;
-  for (unsigned int i = 0; i < sMuonEnsembleGauss.NUniverses(); ++i)
+  for (unsigned int i = 0; i < sMuonEnsembleGaussFile.NUniverses(); ++i)
     hratios[i]->Draw("hist same");
   gPad->SaveAs("multiverse_gauss_ratios.pdf");
   
   new TCanvas;
   // Error band summing in quadrature
-  TGraphAsymmErrors* eBand =sMuonEnsembleGauss.ErrorBand(pot);
+  TGraphAsymmErrors* eBand =sMuonEnsembleGaussFile.ErrorBand(pot);
   DrawErrorBand(hsMuonEnsembleGauss, eBand);
 
   gPad->SaveAs("multiverse_ErrorBand.pdf");
 
 
   // Grab covariance matrix
-  Eigen::MatrixXd m= sMuonEnsembleGauss.CovarianceMatrix(pot);
+  Eigen::MatrixXd m= sMuonEnsembleGaussFile.CovarianceMatrix(pot);
   std::cout << "The matrix m is of size "  << m.rows() << "x" << m.cols() << std::endl;
-  // convert to th2 for drawing 
-  // This eventually should be placed in a header          
-  TH2F* hCov = new TH2F("covariance", "covariance;x;y", m.rows(), 0, m.rows(),  m.cols() , 0 ,  m.cols() );  
-  for (int x = 0 ; x< m.rows();x++)
-    for (int y = 0 ; y< m.rows();y++)
-      hCov->SetBinContent(x,y,m(x,y));
-
+  // convert to th2 for drawing         
+  TH2F* hCov = EigenMatrixToTH2(m);  
   new TCanvas;
   hCov->Draw("colz");
   gPad->SaveAs("cov_mx.pdf");
-  // grab bias matrix
-  Eigen::MatrixXd mb= sMuonEnsembleGauss.BiasMatrix(pot);
-  TH2F* hBias = new TH2F("bias", "bias;x;y", mb.rows(), 0, mb.rows(),  mb.cols() , 0 ,  m.cols() );  
-  for (int x = 0 ; x< mb.rows();x++)
-    for (int y = 0 ; y< mb.rows();y++)
-      hBias->SetBinContent(x,y,mb(x,y));
 
+  // grab bias matrix
+  Eigen::MatrixXd mb= sMuonEnsembleGaussFile.BiasMatrix(pot);
+  TH2F* hBias = EigenMatrixToTH2(mb);
   new TCanvas;
   hBias->Draw("colz");
   gPad->SaveAs("bias_mx.pdf");
 
  // ------- More canvases for the hypercross univ
   new TCanvas;
-  TH1 * hsMuonEnsembleX =  sMuonEnsembleX.Nominal().ToTH1(pot, kBlue);
+  TH1 * hsMuonEnsembleX =  sMuonEnsembleXFile.Nominal().ToTH1(pot, kBlue);
   hsMuonEnsembleX->SetMaximum(1.3*hsMuonEnsembleX->GetMaximum());
   hsMuonEnsembleX->Draw("hist");
   // a vector to store ratios to nominal
   std::vector<TH1*> hratiosx;
-  std::cout<< "cross has "<<sMuonEnsembleX.NUniverses()<< " universes\n";
-  for(unsigned int i = 0; i < sMuonEnsembleX.NUniverses(); ++i){
+  std::cout<< "cross has "<<sMuonEnsembleXFile.NUniverses()<< " universes\n";
+  for(unsigned int i = 0; i < sMuonEnsembleXFile.NUniverses(); ++i){
     // using different colors per systematic
     Color_t color = kBlue;
     if (i==0) color = kBlue;
     if (i== 1 || i==2) color = kViolet +1;
     if (i==3 || i==4) color = kPink;
 
-    sMuonEnsembleX.Universe(i).ToTH1(pot, color,kDashed)->Draw("hist same");     
-    hratiosx.push_back(sMuonEnsembleX.Universe(i).ToTH1(pot, color,kDashed));
+    sMuonEnsembleXFile.Universe(i).ToTH1(pot, color,kDashed)->Draw("hist same");     
+    hratiosx.push_back(sMuonEnsembleXFile.Universe(i).ToTH1(pot, color,kDashed));
     hratiosx.back()->Divide(hsMuonEnsembleX); 
 
   }  
   hsMuonEnsembleX->Draw("hist same");
   gPad->SaveAs("multiverse_x_.pdf");
-
+ 
   hratiosx[0]->SetMinimum(.6);
   hratiosx[0]->SetMaximum(1.4);
   new TCanvas;
-  for (unsigned int i = 0; i < sMuonEnsembleX.NUniverses(); ++i)
+  for (unsigned int i = 0; i < sMuonEnsembleXFile.NUniverses(); ++i)
     hratiosx[i]->Draw("hist same");
   gPad->SaveAs("multiverse_x_ratios.pdf");
   // we dont get covariance out of this one
+
+ new TCanvas;
+
+  TH1 * hsMuonEnsembleX2 =   sMuonEnsemblePartX.Nominal().ToTH1(pot, kGreen+2);
+  TH1 * hsNoMuonEnsembleX2 =  sOtherEnsemblePartX.Nominal().ToTH1(pot, kPink);
+  
+
+  hsMuonEnsembleX2->SetMaximum(1.3*hsMuonEnsembleX2->GetMaximum());
+  hsMuonEnsembleX2->Draw("hist");
+  hsNoMuonEnsembleX2->Draw("hist same");
+  for(unsigned int i = 0; i < sMuonEnsemblePartX.NUniverses(); ++i){
+    // using different colors per systematic
+    Color_t color = kGreen+2;
+    Color_t color2 =kBlack ;
+    if (i==0){ color = kGreen+2; color2 =kBlack;}
+    if (i== 1 || i==2) {color = kViolet +1; color2 =kAzure+2;}
+    if (i==3 || i==4) {color = kPink; color2=kTeal-7;}
+
+    sMuonEnsemblePartX.Universe(i).ToTH1(pot, color,kDashed)->Draw("hist same");  
+    sOtherEnsemblePartX.Universe(i).ToTH1(pot, color2,kDashed)->Draw("hist same");  
+
+  }  
 
 /*
   // repeat for other variable 

@@ -35,6 +35,9 @@ namespace ana
       return Cached(FitMultiverse::RandomGas(ConvertSysts(systs), Nuniv, seed));
     }
 
+    // TO DO: a member that creates a new multiverse from a vector of multiverses 
+    // static const _Multiverse& MergeMultiverse( Multiverse multiverse);
+
     /// Details of a particular universe
     const _Universe<SystT>& GetUniverse(int i) const
     {
@@ -77,6 +80,12 @@ namespace ana
     }
   };
 
+
+//  using Universe = _Universe<ISyst<caf::SRInteractionProxy>>;
+//  using Multiverse = _Multiverse<ISyst<caf::SRInteractionProxy>>;
+//
+//  using UniverseTrue = _Universe<ISyst<caf::SRTrueInteractionProxy>>;
+//  using MultiverseTrue = _Multiverse<ISyst<caf::SRTrueInteractionProxy>>;
   using Universe = _Universe<ISyst>;
   using Multiverse = _Multiverse<ISyst>;
 }
